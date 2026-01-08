@@ -81,41 +81,78 @@ with col2:
 with st.expander("查看当前年份详细数据"):
     st.dataframe(df_filtered)
 
+# --------------------------------------------------------------------------
+# 替换原代码中 st.divider() 及其之后的所有内容
+# --------------------------------------------------------------------------
+
 st.divider() # 分割线
 st.subheader("📈 单省份历史趋势分析")
 
-# 选择省份
+# 1. 选择省份
 prov_list = df_all['Province'].unique()
 selected_prov = st.selectbox("选择要分析的省份", prov_list)
 
-# 筛选该省份所有年份的数据
+# 2. 筛选数据并计算“碳生产率”
 df_prov = df_all[df_all['Province'] == selected_prov].sort_values("Year")
 
-# 画双轴图：左轴看效率，右轴看碳排放
+# 【核心修改】计算碳生产率 (Carbon Productivity)
+# 逻辑：因为原数据是“碳排放强度”(标准化后)，数值越小越好。
+# 碳生产率是反向指标(越高越好)，在标准化数据中，直接取负号即可代表反向趋势。
+df_prov['Carbon_Productivity'] = -df_prov['Carbon_Emission']
+
+# 3. 画双轴图
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 fig_trend = make_subplots(specs=[[{"secondary_y": True}]])
 
-# 1. 效率曲线
+# 曲线1：BANN 效率
 fig_trend.add_trace(
-    go.Scatter(x=df_prov['Year'], y=df_prov['BANN_Score'], name="BANN 效率", mode='lines+markers'),
-    secondary_y=False,
-)
-fig_trend.add_trace(
-    go.Scatter(x=df_prov['Year'], y=df_prov['DEA_Score'], name="SFA 效率", mode='lines+markers', line=dict(dash='dot')),
+    go.Scatter(
+        x=df_prov['Year'],
+        y=df_prov['BANN_Score'],
+        name="BANN 效率",
+        mode='lines+markers',
+        line=dict(color='#1f77b4', width=3) # 蓝色实线
+    ),
     secondary_y=False,
 )
 
-# 2. 碳排放曲线
+# 曲线2：SFA 效率
 fig_trend.add_trace(
-    go.Bar(x=df_prov['Year'], y=df_prov['Carbon_Emission'], name="碳排放量", opacity=0.3),
+    go.Scatter(
+        x=df_prov['Year'],
+        y=df_prov['DEA_Score'],
+        name="SFA 效率",
+        mode='lines+markers',
+        line=dict(color='#ff7f0e', dash='dot') # 橙色虚线
+    ),
+    secondary_y=False,
+)
+
+# 柱状图：碳生产率 (修改了这里)
+fig_trend.add_trace(
+    go.Bar(
+        x=df_prov['Year'],
+        y=df_prov['Carbon_Productivity'], # ★ 这里改成了新计算的变量
+        name="碳生产率",                  # ★ 图例名称修改
+        opacity=0.3,
+        marker_color='green'              # ★ 建议改成绿色，代表绿色生产率
+    ),
     secondary_y=True,
 )
 
-# 设置标题和轴
-fig_trend.update_layout(title=f"{selected_prov}：效率与排放演变 (2010-2022)")
-fig_trend.update_yaxes(title_text="效率值 (0-1)", secondary_y=False)
-fig_trend.update_yaxes(title_text="碳排放 (标准化)", secondary_y=True)
+# 4. 设置标题和轴标签
+fig_trend.update_layout(
+    title=f"{selected_prov}：效率与碳生产率演变 (2010-2022)",
+    hovermode="x unified",
+    legend=dict(orientation="h", y=1.1) # 图例放上面，不遮挡
+)
+
+# 左轴：效率
+fig_trend.update_yaxes(title_text="效率值 (Efficiency)", secondary_y=False, range=[0, 1.1])
+
+# 右轴：碳生产率 (修改了这里)
+fig_trend.update_yaxes(title_text="碳生产率 (标准化指数)", secondary_y=True)
 
 st.plotly_chart(fig_trend, use_container_width=True)
