@@ -1,24 +1,23 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # 1. 页面配置
 st.set_page_config(page_title="省际效率分析", layout="wide")
-st.title("公共管理项目：省际效率与碳排放分析 📊")
+st.title("公共管理项目：省际效率与碳生产率分析 📊")
 
-
-# 2. 读取合并后的数据
-# 找到读取数据的这一行，改成读取 'data.xlsx'
-# 建议用我之前给你的“绝对路径”写法，或者直接写文件名也行（云端默认在根目录）
-
+# 2. 读取数据
 @st.cache_data
 def load_data():
-    return pd.read_excel("data.xlsx") # <--- 确保这里改成了新名字
+    # 确保 data.xlsx 在同级目录下
+    return pd.read_excel("data.xlsx")
 
 try:
     df_all = load_data()
 except FileNotFoundError:
-    st.error("❌ 找不到 'final_project_data.xlsx'。请先运行数据合并脚本。")
+    st.error("❌ 找不到 'data.xlsx'。请确保文件已上传并重命名正确。")
     st.stop()
 
 # 3. 侧边栏交互
@@ -26,15 +25,15 @@ st.sidebar.header("筛选条件")
 years = sorted(df_all['Year'].unique())
 year_selected = st.sidebar.select_slider("选择年份", options=years, value=years[-1])
 
-# 选择模型（对应不同的效率列）
+# --- 修改点 1：侧边栏选项名称 ---
 model_map = {
-    "SFA (随机前沿/DEA参考)": "DEA_Score",  # 对应你的 DEA 文件
-    "BANN (贝叶斯神经网络)": "BANN_Score"  # 对应你的 BANN 文件
+    "DEA (非参数模型)": "DEA_Score",       # <--- 已修改
+    "BANN (贝叶斯神经网络)": "BANN_Score"
 }
 model_label = st.sidebar.radio("选择评估模型", list(model_map.keys()))
 efficiency_col = model_map[model_label]
 
-# 选择 X 轴变量 (因为你有多个投入变量)
+# 选择 X 轴变量
 x_axis_map = {
     "资本投入 (Capital)": "Capital",
     "劳动投入 (Labor)": "Labor",
@@ -47,112 +46,95 @@ x_col = x_axis_map[x_label]
 # 4. 数据筛选
 df_filtered = df_all[df_all['Year'] == year_selected].copy()
 
-# 5. 可视化展示
+# 5. 主视图：散点图
 col1, col2 = st.columns([3, 1])
 
 with col1:
     st.subheader(f"{year_selected}年 投入产出效率分布")
-
-    # 检查是否有数据缺失
     if df_filtered.empty:
         st.warning(f"{year_selected} 年没有数据。")
     else:
-        # 散点图
         fig = px.scatter(
             df_filtered,
-            x=x_col,  # 用户选择的投入变量
-            y="Carbon_Emission",  # 你的输出变量
-            size="Carbon_Emission",  # 气泡大小
-            color=efficiency_col,  # 颜色深浅代表效率值
-            hover_name="Province",  # 鼠标悬停显示省份
-            title=f"{x_label} vs 碳排放 (颜色表示 {model_label.split(' ')[0]} 效率)",
-            color_continuous_scale="Viridis",  # 颜色盘
+            x=x_col,
+            y="Carbon_Emission",
+            size="Carbon_Emission",
+            color=efficiency_col,
+            hover_name="Province",
+            title=f"{x_label} vs 碳生产率 (颜色表示 {model_label.split(' ')[0]} 效率)",
+            color_continuous_scale="Viridis",
             template="plotly_white"
         )
         st.plotly_chart(fig, use_container_width=True)
 
 with col2:
     st.subheader("效率排名 Top 5")
-    # 按当前选中的效率值排序
     top_5 = df_filtered.sort_values(by=efficiency_col, ascending=False).head(5)
     st.table(top_5[['Province', efficiency_col]])
 
-# 6. (可选) 数据详情
 with st.expander("查看当前年份详细数据"):
     st.dataframe(df_filtered)
 
-# --------------------------------------------------------------------------
-# 替换原代码中 st.divider() 及其之后的所有内容
-# --------------------------------------------------------------------------
-
-st.divider() # 分割线
+# 6. 趋势分析 (底部图表)
+st.divider()
 st.subheader("📈 单省份历史趋势分析")
 
-# 1. 选择省份
+# 选择省份
 prov_list = df_all['Province'].unique()
 selected_prov = st.selectbox("选择要分析的省份", prov_list)
 
-# 2. 筛选数据并计算“碳生产率”
+# 筛选该省份数据
 df_prov = df_all[df_all['Province'] == selected_prov].sort_values("Year")
 
-# 【核心修改】计算碳生产率 (Carbon Productivity)
-# 逻辑：因为原数据是“碳排放强度”(标准化后)，数值越小越好。
-# 碳生产率是反向指标(越高越好)，在标准化数据中，直接取负号即可代表反向趋势。
-df_prov['Carbon_Productivity'] = -df_prov['Carbon_Emission']
-
-# 3. 画双轴图
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
+# 创建双轴图
 fig_trend = make_subplots(specs=[[{"secondary_y": True}]])
 
-# 曲线1：BANN 效率
+# 曲线1：BANN 效率 (蓝色实线)
 fig_trend.add_trace(
     go.Scatter(
         x=df_prov['Year'],
         y=df_prov['BANN_Score'],
         name="BANN 效率",
         mode='lines+markers',
-        line=dict(color='#1f77b4', width=3) # 蓝色实线
+        line=dict(color='#1f77b4', width=3)
     ),
     secondary_y=False,
 )
 
-# 曲线2：SFA 效率
+# --- 修改点 2：趋势图图例名称 ---
+# 曲线2：DEA 效率 (橙色虚线)
 fig_trend.add_trace(
     go.Scatter(
         x=df_prov['Year'],
         y=df_prov['DEA_Score'],
-        name="SFA 效率",
+        name="DEA (非参数模型)",      # <--- 已修改
         mode='lines+markers',
-        line=dict(color='#ff7f0e', dash='dot') # 橙色虚线
+        line=dict(color='#ff7f0e', dash='dot')
     ),
     secondary_y=False,
 )
 
-# 柱状图：碳生产率 (修改了这里)
+# 柱状图：碳生产率 (绿色，直接读取原始数据)
 fig_trend.add_trace(
     go.Bar(
         x=df_prov['Year'],
-        y=df_prov['Carbon_Productivity'], # ★ 这里改成了新计算的变量
-        name="碳生产率",                  # ★ 图例名称修改
-        opacity=0.3,
-        marker_color='green'              # ★ 建议改成绿色，代表绿色生产率
+        y=df_prov['Carbon_Emission'],
+        name="碳生产率",
+        opacity=0.4,
+        marker_color='green'
     ),
     secondary_y=True,
 )
 
-# 4. 设置标题和轴标签
+# 设置布局
 fig_trend.update_layout(
-    title=f"{selected_prov}：效率与碳生产率演变 (2010-2022)",
+    title=f"{selected_prov}：效率与碳生产率演变",
     hovermode="x unified",
-    legend=dict(orientation="h", y=1.1) # 图例放上面，不遮挡
+    legend=dict(orientation="h", y=1.1)
 )
 
-# 左轴：效率
+# 设置坐标轴
 fig_trend.update_yaxes(title_text="效率值 (Efficiency)", secondary_y=False, range=[0, 1.1])
-
-# 右轴：碳生产率 (修改了这里)
-fig_trend.update_yaxes(title_text="碳生产率 (标准化指数)", secondary_y=True)
+fig_trend.update_yaxes(title_text="碳生产率 (指数)", secondary_y=True, range=[0, 1.2])
 
 st.plotly_chart(fig_trend, use_container_width=True)
