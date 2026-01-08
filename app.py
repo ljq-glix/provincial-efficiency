@@ -25,9 +25,9 @@ st.sidebar.header("筛选条件")
 years = sorted(df_all['Year'].unique())
 year_selected = st.sidebar.select_slider("选择年份", options=years, value=years[-1])
 
-# --- 修改点 1：侧边栏选项名称 ---
+# --- 【设置1】侧边栏选项名称：保持为“DEA (非参数模型)” ---
 model_map = {
-    "DEA (非参数模型)": "DEA_Score",       # <--- 已修改
+    "DEA (非参数模型)": "DEA_Score",       # <--- 侧边栏显示这个
     "BANN (贝叶斯神经网络)": "BANN_Score"
 }
 model_label = st.sidebar.radio("选择评估模型", list(model_map.keys()))
@@ -101,13 +101,13 @@ fig_trend.add_trace(
     secondary_y=False,
 )
 
-# --- 修改点 2：趋势图图例名称 ---
+# --- 【设置2】趋势图图例名称：改为“DEA效率” ---
 # 曲线2：DEA 效率 (橙色虚线)
 fig_trend.add_trace(
     go.Scatter(
         x=df_prov['Year'],
         y=df_prov['DEA_Score'],
-        name="DEA (非参数模型)",      # <--- 已修改
+        name="DEA效率",               # <--- 图表里显示简洁的“DEA效率”
         mode='lines+markers',
         line=dict(color='#ff7f0e', dash='dot')
     ),
